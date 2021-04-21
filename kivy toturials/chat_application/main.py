@@ -6,17 +6,22 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.clock import Clock
+from kivy.core.window import Window
+from kivy.uix.scrollview import ScrollView
 import socket_client
 import os, sys
 
 kivy.require('2.0.0')
+
+
+
 
 class ConnectPage(GridLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.cols = 2
         if os.path.isfile('details.txt'):
-            with open('details.txt','r') as f:
+            with open('details.txt', 'r') as f:
                 d = f.read().split(',')
                 prev_ip = d[0]
                 prev_port = d[1]
@@ -45,6 +50,7 @@ class ConnectPage(GridLayout):
         self.join = Button(text = 'Join')
         self.join.bind(on_press=self.join_func)
         self.add_widget(self.join)
+
     def join_func(self, instance):
         port = self.port.text
         ip = self.ip.text
@@ -52,7 +58,7 @@ class ConnectPage(GridLayout):
 
         print(f"Attempting to join {ip}:{port} as {username}")
 
-        with open("details.txt",'w') as f:
+        with open("details.txt", 'w') as f:
             f.write(f"{ip},{port},{username}")
 
         info = f"Attempting to join {ip}:{port} as {username}"
@@ -72,6 +78,71 @@ class ConnectPage(GridLayout):
         chat_app.screen_manager.current = "Chat"
 
 
+class ScrollableLabel(ScrollView):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.layout = GridLayout(cols=1, size_hint_y=None)
+        self.add_widget(self.layout)
+
+        self.chat_history = Label(size_hint_y=None, markup=True)
+        self.scroll_to_point = Label()
+
+        self.layout.add_widget(self.chat_history)
+        self.layout.add_widget(self.scroll_to_point)
+
+    def update_chat_history(self, message):
+        self.chat_history.text += '\n' + message
+
+        self.layout.height = self.chat_history.texture_size[1] + 15
+        self.chat_history.height = self.chat_history.texture_size[1]
+
+        self.chat_history.text_size = (self.chat_history.width*0.98,None)
+
+        self.scroll_to(self.scroll_to_point)
+
+class ChatPage(GridLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.cols = 1
+        self.rows = 2
+
+        self.history = ScrollableLabel(height=Window.size[1]*0.9, size_hint_y=None)
+        self.add_widget(self.history)
+
+        self.new_message = TextInput(width=Window.size[0]*0.8, size_hint_x=None, multiline=False)
+        self.send = Button(text='Send')
+        self.send.bind(on_press=self.send_message)
+
+        bottom_line = GridLayout(cols=2)
+        bottom_line.add_widget(self.new_message)
+        bottom_line.add_widget(self.send)
+        self.add_widget(bottom_line)
+
+        Window.bind(on_key_down=self.on_key_down)
+
+        Clock.schedule_once(self.focus_text_input, 1)
+        socket_client.start_listening(self.incoming_message, show_error)
+
+    def on_key_down(self, instance, keyboard, keycode, text, modifiers):
+        if keycode == 40:
+            self.send_message(None)
+
+
+    def send_message(self, _):
+        message = self.new_message.text
+        self.new_message.text = ''
+        if message:
+            self.history.update_chat_history(f'[color=dd2020]{chat_app.connect_page.username.text}[/color] > {message}')
+            socket_client.send(message)
+        # print(message)
+        Clock.schedule_once(self.focus_text_input,0.1)
+
+    def focus_text_input(self, _):
+        self.new_message.focus = True
+
+    def incoming_message(self, username, message):
+        self.history.update_chat_history(f'[color=20dd20]{username}[/color] > {message}')
+
 class InfoPage(GridLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -85,14 +156,6 @@ class InfoPage(GridLayout):
 
     def update_text_width(self, *_):
         self.message.text_size = (self.message.width * 0.9, None)
-
-
-class ChatPage(GridLayout):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.cols = 1
-        self.add_widget(Label(text="Hey at least it worked up to this point."))
-
 
 class EpicApp(App):
     def build(self):
